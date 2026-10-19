@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
@@ -40,6 +42,8 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -65,7 +69,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.collectLatest
 import org.marshsoft.timora.domain.Timer
 import org.marshsoft.timora.domain.formatDuration
 import org.marshsoft.timora.domain.totalDurationSeconds
@@ -102,7 +105,11 @@ fun HomeRoute(
     )
 }
 
-/** Shows delete/undo and error snackbars for one-shot [HomeEvent]s. */
+/**
+ * Shows delete/undo and error snackbars for one-shot [HomeEvent]s. Events are handled strictly one
+ * after another (`collect`, not `collectLatest`) so every deleted timer gets its own Undo snackbar
+ * and a quick second delete can never cancel the first one's Undo.
+ */
 @Composable
 internal fun HomeEventsEffect(
     events: Flow<HomeEvent>,
@@ -110,13 +117,14 @@ internal fun HomeEventsEffect(
     onUndoDelete: (Timer) -> Unit,
 ) {
     LaunchedEffect(events, snackbarHostState) {
-        events.collectLatest { event ->
+        events.collect { event ->
             when (event) {
                 is HomeEvent.TimerDeleted -> {
                     val result = snackbarHostState.showSnackbar(
                         message = "Deleted \"${event.timer.name}\"",
                         actionLabel = "Undo",
                         withDismissAction = true,
+                        duration = SnackbarDuration.Short,
                     )
                     if (result == SnackbarResult.ActionPerformed) onUndoDelete(event.timer)
                 }
@@ -233,10 +241,14 @@ private fun TimerCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
         Row(Modifier.height(IntrinsicSize.Min)) {
+            // Inset, fully rounded accent bar: it sits inside the card padding so the card's
+            // corner clip never cuts it into a crescent.
             Box(
                 Modifier
-                    .width(8.dp)
+                    .padding(start = Spacing.md, top = Spacing.md, bottom = Spacing.md)
+                    .width(6.dp)
                     .fillMaxHeight()
+                    .clip(RoundedCornerShape(3.dp))
                     .background(accent)
                     .testTag("timer_accent_${timer.id}"),
             )
@@ -253,7 +265,7 @@ private fun TimerCard(
                 Text(
                     formatDuration(timer.totalDurationSeconds()),
                     style = MaterialTheme.typography.timerDuration,
-                    color = accent,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.testTag("timer_duration_${timer.id}"),
                 )
                 FlowRow(
@@ -308,6 +320,10 @@ private fun TimerCard(
                     onClick = onRun,
                     modifier = Modifier.size(56.dp).testTag("play_${timer.id}"),
                     shape = CircleShape,
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
                 ) {
                     Icon(
                         Icons.Filled.PlayArrow,

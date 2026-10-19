@@ -196,4 +196,30 @@ class HomeScreenTest {
         rule.onNodeWithTag("menu_delete_1").performClick()
         rule.waitUntil(5_000) { rule.onAllNodesWithText("Could not delete timer").fetchSemanticsNodes().isNotEmpty() }
     }
+
+    @Test fun quickSuccessiveDeletesKeepEveryUndo() {
+        val a = sampleTimer(1, "Alpha")
+        val b = sampleTimer(2, "Beta")
+        val repo = FakeTimerRepository(listOf(a, b))
+        val vm = HomeViewModel(repo)
+        val host = SnackbarHostState()
+        rule.setContent {
+            TimoraTheme {
+                val state by vm.state.collectAsState()
+                HomeEventsEffect(vm.events, host, vm::undoDelete)
+                HomeScreen(state, host, {}, {}, {}, {}, vm::duplicate, vm::delete)
+            }
+        }
+        rule.runOnIdle {
+            vm.delete(a)
+            vm.delete(b)
+        }
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("Deleted \"Alpha\"").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText("Undo").performClick()
+        // the second delete's snackbar must still show up afterwards, with its own Undo
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("Deleted \"Beta\"").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText("Undo").performClick()
+        rule.waitUntil(5_000) { repo.current.size == 2 }
+        assertEquals(setOf("Alpha", "Beta"), repo.current.map { it.name }.toSet())
+    }
 }

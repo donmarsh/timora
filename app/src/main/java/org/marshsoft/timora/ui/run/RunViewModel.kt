@@ -1,5 +1,6 @@
 package org.marshsoft.timora.ui.run
 
+import android.content.Context
 import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -44,7 +45,7 @@ sealed interface RunUiState {
     data class Ready(
         val timerName: String,
         val run: RunState,
-        /** "Block 2/3"; null for a single block or the prep step. */
+        /** "Block 2/3" or "Block 2/3 · Tabata"; just the name for a single named block; null for an unnamed single block or prep. */
         val blockLabel: String?,
         /** "Cycle 3/8"; null for the prep step or a single cycle. */
         val cycleLabel: String?,
@@ -124,9 +125,14 @@ class RunViewModel(
         return RunUiState.Ready(
             timerName = timerName,
             run = run,
-            blockLabel = if (!prep && step != null && step.totalBlocks > 1) {
-                "Block ${step.blockIndex + 1}/${step.totalBlocks}"
-            } else null,
+            blockLabel = when {
+                prep || step == null -> null
+                step.totalBlocks > 1 -> buildString {
+                    append("Block ${step.blockIndex + 1}/${step.totalBlocks}")
+                    step.blockName?.let { append(" · ").append(it) }
+                }
+                else -> step.blockName
+            },
             cycleLabel = if (!prep && step != null && step.totalCycles > 1) {
                 "Cycle ${step.cycleIndex}/${step.totalCycles}"
             } else null,
@@ -148,18 +154,28 @@ class RunViewModel(
 
     private fun flushTick(e: TimerEngine) {
         val now = timeSource.nowMs()
-        e.tick(now - lastTickMs)
+        var delta = now - lastTickMs
+        // A single delta far above the tick interval means the process was frozen/throttled (e.g. backgrounded
+        // or doze). Fast-forwarding the timer by that gap would silently skip segments, so cap it. The run is
+        // also paused on ON_STOP; this is a second line of defence.
+        if (delta > MAX_TICK_DELTA_MS) delta = TICK_INTERVAL_MS
+        e.tick(delta)
         lastTickMs = now
+    }
+
+    /** Pauses the run; a no-op unless it is currently running (used when the app goes to background). */
+    fun pause() {
+        val e = engine ?: return
+        if (e.state.value.status != RunStatus.RUNNING) return
+        flushTick(e)
+        tickJob?.cancel()
+        e.pause()
     }
 
     fun togglePlayPause() {
         val e = engine ?: return
         when (e.state.value.status) {
-            RunStatus.RUNNING -> {
-                flushTick(e)
-                tickJob?.cancel()
-                e.pause()
-            }
+            RunStatus.RUNNING -> pause()
             RunStatus.PAUSED -> {
                 e.resume()
                 startTicker()
@@ -168,13 +184,27 @@ class RunViewModel(
         }
     }
 
+    /**
+     * Applies the pending partial tick while running so the skip acts on up-to-date state.
+     * Returns false if flushing finished the run (the skip must then not be applied again).
+     */
+    private fun flushIfRunning(e: TimerEngine): Boolean {
+        if (e.state.value.status == RunStatus.RUNNING) {
+            flushTick(e)
+            return e.state.value.status != RunStatus.FINISHED
+        }
+        return true
+    }
+
     fun skipNext() {
         val e = engine ?: return
+        if (!flushIfRunning(e)) return
         e.skipNext()
     }
 
     fun skipPrevious() {
         val e = engine ?: return
+        if (!flushIfRunning(e)) return
         e.skipPrevious()
     }
 
@@ -194,11 +224,23 @@ class RunViewModel(
 
     companion object {
         const val TICK_INTERVAL_MS = 100L
+        const val MAX_TICK_DELTA_MS = 1_000L
 
-        fun factory(timerId: Long, container: AppContainer, cuePlayer: CuePlayer): androidx.lifecycle.ViewModelProvider.Factory =
+        /** The cue player is created here (with the application context) so it is tied to the ViewModel, not composition. */
+        fun factory(
+            timerId: Long,
+            container: AppContainer,
+            appContext: Context,
+            cuePlayerFactory: (Context) -> CuePlayer = { AndroidCuePlayer(it) },
+        ): androidx.lifecycle.ViewModelProvider.Factory =
             viewModelFactory {
                 initializer {
-                    RunViewModel(timerId, container.timerRepository, container.settingsRepository, cuePlayer)
+                    RunViewModel(
+                        timerId,
+                        container.timerRepository,
+                        container.settingsRepository,
+                        cuePlayerFactory(appContext.applicationContext),
+                    )
                 }
             }
     }

@@ -5,7 +5,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertRangeInfoEquals
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -19,6 +21,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
 import org.marshsoft.timora.domain.RunState
 import org.marshsoft.timora.domain.RunStatus
 import org.marshsoft.timora.domain.SegmentType
@@ -87,7 +90,8 @@ class RunScreenTest {
         show(ready(runState(RunStatus.RUNNING, tickMs = 1_000), block = "Block 1/2"))
         rule.onNodeWithTag("run_time").assertTextEquals("0:04")
         rule.onNodeWithTag("run_segment_name").assertTextEquals("Work")
-        rule.onNodeWithTag("run_type_label").assertTextEquals("WORK")
+        // Segment is named "Work", same as its type, so the redundant type label is hidden.
+        rule.onNodeWithTag("run_type_label").assertDoesNotExist()
         rule.onNodeWithTag("run_timer_name").assertTextEquals("Test timer")
         rule.onNodeWithTag("run_block_label").assertTextContains("Block 1/2")
         rule.onNodeWithTag("run_cycle_label").assertTextContains("Cycle 1/2")
@@ -107,7 +111,7 @@ class RunScreenTest {
 
     @Test fun restSegmentShowsRestLabel() {
         show(ready(runState(RunStatus.RUNNING, step = 1)))
-        rule.onNodeWithTag("run_type_label").assertTextEquals("REST")
+        rule.onNodeWithTag("run_type_label").assertDoesNotExist()
         rule.onNodeWithTag("run_segment_name").assertTextEquals("Rest")
     }
 
@@ -164,6 +168,65 @@ class RunScreenTest {
         show(RunUiState.Ready("Long", engine.state.value, null, null, null))
         rule.onNodeWithTag("run_time").assertTextEquals("1:01:40")
         rule.onNodeWithTag("run_type_label").assertTextEquals("COOL-DOWN")
+    }
+
+    private fun customState(type: SegmentType, name: String, prep: Int = 0): RunUiState.Ready {
+        val base = workRestTimer(prep = prep)
+        val timer = if (prep > 0) base else base.copy(
+            blocks = listOf(base.blocks[0].copy(segments = listOf(runSeg(name, 30, type)))),
+        )
+        val engine = TimerEngine(TimerPlan.from(timer)).also { it.start() }
+        return RunUiState.Ready("T", engine.state.value, null, null, null)
+    }
+
+    @Test fun typeLabelShownWhenDifferentFromName() {
+        show(customState(SegmentType.WORK, "Burpees"))
+        rule.onNodeWithTag("run_type_label").assertTextEquals("WORK")
+        rule.onNodeWithTag("run_segment_name").assertTextEquals("Burpees")
+    }
+
+    @Test fun typeLabelComparisonIsCaseInsensitive() {
+        show(customState(SegmentType.WORK, "WORK"))
+        rule.onNodeWithTag("run_type_label").assertDoesNotExist()
+    }
+
+    @Test fun prepStepShowsGetReadyOnlyOnce() {
+        show(customState(SegmentType.PREP, "", prep = 3))
+        rule.onNodeWithTag("run_segment_name").assertTextEquals("Get ready")
+        rule.onNodeWithTag("run_type_label").assertDoesNotExist()
+        rule.onNodeWithText("GET READY").assertDoesNotExist()
+    }
+
+    @Test fun ringExposesProgressSemantics() {
+        val run = runState(RunStatus.RUNNING, tickMs = 1_000)
+        show(ready(run))
+        rule.onNodeWithTag("run_ring").assertRangeInfoEquals(ProgressBarRangeInfo(run.stepProgress, 0f..1f))
+    }
+
+    @Test fun namedBlockLabelIsShown() {
+        show(ready(runState(RunStatus.RUNNING), block = "Block 2/3 · Tabata"))
+        rule.onNodeWithTag("run_block_label").assertTextContains("Block 2/3 · Tabata")
+    }
+
+    @Test @Config(qualifiers = "w800dp-h360dp")
+    fun landscapeLayoutShowsEverythingAndStaysInteractive() {
+        show(ready(runState(RunStatus.RUNNING, tickMs = 1_000), block = "Block 1/2"))
+        rule.onNodeWithTag("run_time").assertIsDisplayed().assertTextEquals("0:04")
+        rule.onNodeWithTag("run_segment_name").assertIsDisplayed()
+        rule.onNodeWithTag("run_ring").assertIsDisplayed()
+        rule.onNodeWithTag("run_next_up").assertIsDisplayed()
+        rule.onNodeWithTag("run_play_pause").assertIsDisplayed().performClick()
+        assertEquals(1, playPause)
+    }
+
+    @Test @Config(qualifiers = "w360dp-h520dp")
+    fun shortPortraitUsesCompactControls() {
+        show(ready(runState(RunStatus.PAUSED)))
+        rule.onNodeWithTag("run_time").assertIsDisplayed()
+        rule.onNodeWithTag("run_paused_label").assertIsDisplayed()
+        rule.onNodeWithTag("run_play_pause").assertIsDisplayed().performClick()
+        rule.onNodeWithTag("run_skip_next").assertIsDisplayed()
+        assertEquals(1, playPause)
     }
 
     @Test fun keepsScreenOnOnlyWhileRunning() {

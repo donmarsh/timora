@@ -1,9 +1,11 @@
 package org.marshsoft.timora.ui.run
 
 import android.content.Context
+import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Build
+import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -28,6 +30,9 @@ class AndroidCuePlayer(context: Context) : CuePlayer {
     private fun generator(): ToneGenerator? {
         if (tone == null && !toneFailed) {
             tone = try {
+                // ToneGenerator only accepts a stream type (no AudioAttributes). STREAM_MUSIC is deliberate:
+                // timer beeps follow the media volume the user controls while exercising (STREAM_ALARM would
+                // ignore it and could blast at alarm volume, and is silenced by some DND modes).
                 ToneGenerator(AudioManager.STREAM_MUSIC, VOLUME)
             } catch (e: Exception) {
                 toneFailed = true
@@ -69,7 +74,18 @@ class AndroidCuePlayer(context: Context) : CuePlayer {
                 VibrationKind.TRANSITION -> longArrayOf(0, 120)
                 VibrationKind.FINISH -> longArrayOf(0, 200, 120, 200, 120, 400)
             }
-            vibrator()?.vibrate(VibrationEffect.createWaveform(timings, -1))
+            val effect = VibrationEffect.createWaveform(timings, -1)
+            val v = vibrator() ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                // USAGE_ALARM: unlike USAGE_TOUCH it is not dropped when the app is not in the foreground or
+                // under battery-saver style restrictions, which matters because cues fire while the screen is
+                // off or another app is on top.
+                val attrs = VibrationAttributes.createForUsage(VibrationAttributes.USAGE_ALARM)
+                v.vibrate(effect, attrs)
+            } else {
+                @Suppress("DEPRECATION")
+                v.vibrate(effect, AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build())
+            }
         } catch (e: Exception) {
             // best-effort
         }

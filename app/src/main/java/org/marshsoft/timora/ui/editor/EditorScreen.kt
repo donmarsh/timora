@@ -14,7 +14,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -62,6 +63,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -122,6 +125,9 @@ fun EditorScreen(
 
     Scaffold(
         modifier = modifier,
+        // Insets are applied exactly once, here: safeDrawing = system bars + display cutout + IME,
+        // so the keyboard pushes the content up and nothing else pads for it.
+        contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
                 title = {
@@ -193,7 +199,7 @@ fun EditorScreen(
 private fun EditorContent(state: EditorUiState, actions: EditorActions) {
     val timer = state.timer
     LazyColumn(
-        modifier = Modifier.fillMaxSize().imePadding().testTag("editor_list"),
+        modifier = Modifier.fillMaxSize().testTag("editor_list"),
         contentPadding = PaddingValues(start = Spacing.md, end = Spacing.md, top = Spacing.sm, bottom = Spacing.xxl),
         verticalArrangement = Arrangement.spacedBy(Spacing.md),
     ) {
@@ -293,6 +299,9 @@ private fun DetailsCard(state: EditorUiState, actions: EditorActions) {
     }
 }
 
+/** Black on light swatches, white on dark ones, so the check mark is always visible. */
+internal fun checkTint(accent: Color): Color = if (accent.luminance() > 0.4f) Color.Black else Color.White
+
 @Composable
 private fun ColorSwatch(index: Int, selected: Boolean, onClick: () -> Unit) {
     val color = TimoraTheme.cardAccent(index)
@@ -316,7 +325,7 @@ private fun ColorSwatch(index: Int, selected: Boolean, onClick: () -> Unit) {
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            if (selected) Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+            if (selected) Icon(Icons.Filled.Check, contentDescription = null, tint = checkTint(color), modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -560,14 +569,27 @@ internal fun DurationEditor(
     onAdjust: (Int) -> Unit,
     tagPrefix: String,
 ) {
-    var minText by remember(totalSeconds) { mutableStateOf((totalSeconds / 60).toString()) }
-    var secText by remember(totalSeconds) { mutableStateOf((totalSeconds % 60).toString()) }
+    // Local text state is the source of truth while a field is focused, so typing is never
+    // overwritten by the model round-trip. It resyncs from the model when unfocused, after the
+    // +/- buttons, and (normalising e.g. 90s -> 1:30) when a field loses focus.
+    var minText by remember { mutableStateOf((totalSeconds / 60).toString()) }
+    var secText by remember { mutableStateOf((totalSeconds % 60).toString()) }
+    var minFocused by remember { mutableStateOf(false) }
+    var secFocused by remember { mutableStateOf(false) }
+    var forceSync by remember { mutableStateOf(false) }
+    LaunchedEffect(totalSeconds, forceSync) {
+        if (forceSync || !(minFocused || secFocused)) {
+            minText = (totalSeconds / 60).toString()
+            secText = (totalSeconds % 60).toString()
+            forceSync = false
+        }
+    }
     val numberKeyboard = KeyboardOptions(keyboardType = KeyboardType.Number)
     val numberStyle = MaterialTheme.typography.timerDuration.copy(textAlign = TextAlign.Center)
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(
-            onClick = { onAdjust(-DURATION_STEP) },
+            onClick = { forceSync = true; onAdjust(-DURATION_STEP) },
             modifier = Modifier.testTag("${tagPrefix}_dec"),
         ) { Icon(Icons.Filled.Remove, contentDescription = "Decrease duration") }
         OutlinedTextField(
@@ -582,7 +604,13 @@ internal fun DurationEditor(
             isError = isError,
             textStyle = numberStyle,
             keyboardOptions = numberKeyboard,
-            modifier = Modifier.width(76.dp).testTag("${tagPrefix}_min"),
+            modifier = Modifier
+                .width(76.dp)
+                .onFocusChanged { f ->
+                    if (minFocused && !f.isFocused) forceSync = true
+                    minFocused = f.isFocused
+                }
+                .testTag("${tagPrefix}_min"),
         )
         Text(":", style = MaterialTheme.typography.timerDuration, modifier = Modifier.padding(horizontal = Spacing.xs))
         OutlinedTextField(
@@ -597,10 +625,16 @@ internal fun DurationEditor(
             isError = isError,
             textStyle = numberStyle,
             keyboardOptions = numberKeyboard,
-            modifier = Modifier.width(76.dp).testTag("${tagPrefix}_sec"),
+            modifier = Modifier
+                .width(76.dp)
+                .onFocusChanged { f ->
+                    if (secFocused && !f.isFocused) forceSync = true
+                    secFocused = f.isFocused
+                }
+                .testTag("${tagPrefix}_sec"),
         )
         IconButton(
-            onClick = { onAdjust(DURATION_STEP) },
+            onClick = { forceSync = true; onAdjust(DURATION_STEP) },
             modifier = Modifier.testTag("${tagPrefix}_inc"),
         ) { Icon(Icons.Filled.Add, contentDescription = "Increase duration") }
     }

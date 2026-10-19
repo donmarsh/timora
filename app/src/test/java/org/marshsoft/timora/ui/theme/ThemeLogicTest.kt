@@ -43,6 +43,13 @@ class ThemeLogicTest {
         }
     }
 
+    @Test fun accentOnAccentContrastIsAtLeastIconLevel() {
+        for (dark in listOf(false, true)) for (t in SegmentTypeKey.entries) {
+            val c = segmentColorsFor(t, dark)
+            assertTrue("$t dark=$dark", contrast(c.accent, c.onAccent) >= 3.0)
+        }
+    }
+
     private fun lum(c: androidx.compose.ui.graphics.Color): Double {
         fun ch(v: Float): Double = v.toDouble().let { if (it <= 0.03928) it / 12.92 else Math.pow((it + 0.055) / 1.055, 2.4) }
         return 0.2126 * ch(c.red) + 0.7152 * ch(c.green) + 0.0722 * ch(c.blue)

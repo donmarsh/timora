@@ -1,6 +1,8 @@
 package org.marshsoft.timora.ui.editor
 
-import androidx.lifecycle.viewmodel.CreationExtras
+import androidx.lifecycle.SavedStateHandle
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.runner.RunWith
 import app.cash.turbine.test
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -21,7 +23,9 @@ import org.marshsoft.timora.domain.ValidationError
 import org.marshsoft.timora.ui.home.FakeTimerRepository
 import org.marshsoft.timora.ui.home.sampleTimer
 
+// Robolectric: the ViewModel persists its draft via org.json, which is only real on Robolectric.
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(AndroidJUnit4::class)
 class EditorViewModelTest {
     @Before fun setUp() = Dispatchers.setMain(UnconfinedTestDispatcher())
 
@@ -352,7 +356,9 @@ class EditorViewModelTest {
 
     @Test fun `factory creates a view model`() {
         val f = EditorViewModel.factory(FakeTimerRepository(), 0L)
-        assertTrue(f.create(EditorViewModel::class.java, CreationExtras.Empty) is EditorViewModel)
+        // createSavedStateHandle() needs a real SavedStateRegistryOwner, so resolve through an activity.
+        val activity = org.robolectric.Robolectric.buildActivity(androidx.activity.ComponentActivity::class.java).setup().get()
+        assertTrue(androidx.lifecycle.ViewModelProvider(activity, f)[EditorViewModel::class.java] is EditorViewModel)
     }
 
     @Test fun `moved helper`() {
@@ -365,5 +371,60 @@ class EditorViewModelTest {
         assertEquals(90, combine("1", "30"))
         assertEquals(135, combine("1", "75"))
         assertEquals(86_400, combine("9999", "0"))
+    }
+
+    // ---- process-death draft restore ----
+
+    @Test fun draftIsRestoredFromSavedStateInsteadOfReloading() {
+        val repo = FakeTimerRepository(listOf(sampleTimer(3, "Tabata")))
+        val handle = SavedStateHandle()
+        val first = EditorViewModel(repo, 3, handle)
+        first.updateName("Edited")
+        first.addBlock() // consumes temp ids
+        first.save() // valid? may fail validation or save; either way showErrors/initial are persisted
+        first.updateName("Edited again")
+
+        repo.failGet = IllegalStateException("must not reload")
+        val second = EditorViewModel(repo, 3, handle)
+        val s = second.state.value
+        assertFalse(s.loading)
+        assertFalse(s.notFound)
+        assertEquals("Edited again", s.timer.name)
+        assertEquals(first.state.value.timer, s.timer)
+        assertEquals(first.state.value.initial, s.initial)
+        assertEquals(first.state.value.showErrors, s.showErrors)
+        assertTrue(s.dirty)
+    }
+
+    @Test fun restoredDraftKeepsTempIdCounterAndErrorFlag() {
+        val handle = SavedStateHandle()
+        val first = EditorViewModel(FakeTimerRepository(), 0L, handle)
+        first.updateName("")
+        first.save() // blank name -> showErrors
+        assertTrue(first.state.value.showErrors)
+        first.addBlock()
+        val ids = first.timer.blocks.flatMap { b -> listOf(b.id) + b.segments.map { it.id } }
+
+        val second = EditorViewModel(FakeTimerRepository(), 0L, handle)
+        assertTrue(second.state.value.showErrors)
+        assertTrue(second.state.value.isNew)
+        second.addBlock()
+        val newIds = second.timer.blocks.last().let { listOf(it.id) + it.segments.map { s -> s.id } }
+        assertTrue("temp ids must not collide after restore", newIds.none { it in ids })
+    }
+
+    @Test fun corruptSavedDraftFallsBackToLoading() {
+        val handle = SavedStateHandle().apply {
+            set(EditorViewModel.KEY_LOADED, true)
+            set(EditorViewModel.KEY_DRAFT, "garbage")
+        }
+        val vm = EditorViewModel(FakeTimerRepository(listOf(sampleTimer(3, "Tabata"))), 3, handle)
+        assertEquals("Tabata", vm.state.value.timer.name)
+    }
+
+    @Test fun nothingIsPersistedWhileLoadingOrNotFound() {
+        val handle = SavedStateHandle()
+        EditorViewModel(FakeTimerRepository(), 99, handle)
+        assertNull(handle.get<Boolean>(EditorViewModel.KEY_LOADED))
     }
 }

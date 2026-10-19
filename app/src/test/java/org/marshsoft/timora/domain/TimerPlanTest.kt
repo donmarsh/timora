@@ -97,4 +97,11 @@ class TimerPlanTest {
         val plan = TimerPlan.from(timer(listOf(workRest(cycles = 3))))
         assertEquals(listOf(1, 1, 2, 2, 3, 3), plan.steps.map { it.cycleIndex })
     }
+
+    @Test fun blockNameIsCopiedToStepsAndNullForPrepAndBlank() {
+        val named = workRest(cycles = 1).copy(name = "Tabata")
+        val blank = Block(segments = listOf(seg("Solo", 10)), name = "  ")
+        val plan = TimerPlan.from(timer(listOf(named, blank), prep = 5))
+        assertEquals(listOf(null, "Tabata", "Tabata", null), plan.steps.map { it.blockName })
+    }
 }

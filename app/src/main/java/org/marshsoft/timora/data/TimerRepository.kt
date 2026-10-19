@@ -1,6 +1,10 @@
 package org.marshsoft.timora.data
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import org.marshsoft.timora.domain.Timer
 import org.marshsoft.timora.domain.ValidationError
@@ -50,5 +54,19 @@ class TimerRepositoryImpl(
         val original = get(id) ?: return null
         val now = clock()
         return dao.upsert(original.copy(id = 0, name = "${original.name} (copy)", createdAt = now, updatedAt = now))
+    }
+}
+
+/**
+ * Decorator whose [observeAll] does not emit until first-launch seeding has finished, so the home list
+ * never flashes an empty state before the sample timers arrive.
+ */
+class SeedGatedTimerRepository(
+    private val delegate: TimerRepository,
+    private val seeded: StateFlow<Boolean>,
+) : TimerRepository by delegate {
+    override fun observeAll(): Flow<List<Timer>> = flow {
+        seeded.first { it }
+        emitAll(delegate.observeAll())
     }
 }

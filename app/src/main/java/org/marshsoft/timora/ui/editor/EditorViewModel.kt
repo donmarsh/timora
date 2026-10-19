@@ -1,8 +1,10 @@
 package org.marshsoft.timora.ui.editor
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.CancellationException
@@ -80,6 +82,7 @@ interface EditorActions {
 class EditorViewModel(
     private val repository: TimerRepository,
     private val timerId: Long,
+    private val savedState: SavedStateHandle = SavedStateHandle(),
 ) : ViewModel(), EditorActions {
 
     private val _state = MutableStateFlow(EditorUiState())
@@ -91,7 +94,35 @@ class EditorViewModel(
     private var nextTempId = -1L
 
     init {
-        load()
+        if (!restore()) load()
+        // Mirror the draft into the SavedStateHandle so it survives process death.
+        viewModelScope.launch { _state.collect { persist(it) } }
+    }
+
+    private fun persist(s: EditorUiState) {
+        if (s.loading || s.notFound) return
+        savedState[KEY_DRAFT] = EditorDraftCodec.encode(s.timer)
+        savedState[KEY_INITIAL] = EditorDraftCodec.encode(s.initial)
+        savedState[KEY_NEXT_ID] = nextTempId
+        savedState[KEY_IS_NEW] = s.isNew
+        savedState[KEY_SHOW_ERRORS] = s.showErrors
+        savedState[KEY_LOADED] = true
+    }
+
+    /** Restores a draft saved before process death; returns false if there is none (or it is corrupt). */
+    private fun restore(): Boolean {
+        if (savedState.get<Boolean>(KEY_LOADED) != true) return false
+        val draft = EditorDraftCodec.decode(savedState.get<String>(KEY_DRAFT)) ?: return false
+        val initial = EditorDraftCodec.decode(savedState.get<String>(KEY_INITIAL)) ?: draft
+        nextTempId = savedState.get<Long>(KEY_NEXT_ID) ?: -1L
+        _state.value = EditorUiState(
+            loading = false,
+            isNew = savedState.get<Boolean>(KEY_IS_NEW) ?: (timerId <= 0L),
+            timer = draft,
+            initial = initial,
+            showErrors = savedState.get<Boolean>(KEY_SHOW_ERRORS) ?: false,
+        )
+        return true
     }
 
     private fun tempId(): Long = nextTempId--
@@ -263,8 +294,15 @@ class EditorViewModel(
             SegmentType.COOLDOWN -> "Cooldown"
         }
 
+        internal const val KEY_DRAFT = "editor_draft"
+        internal const val KEY_INITIAL = "editor_initial"
+        internal const val KEY_NEXT_ID = "editor_next_temp_id"
+        internal const val KEY_IS_NEW = "editor_is_new"
+        internal const val KEY_SHOW_ERRORS = "editor_show_errors"
+        internal const val KEY_LOADED = "editor_loaded"
+
         fun factory(repository: TimerRepository, timerId: Long): ViewModelProvider.Factory = viewModelFactory {
-            initializer { EditorViewModel(repository, timerId) }
+            initializer { EditorViewModel(repository, timerId, createSavedStateHandle()) }
         }
     }
 }

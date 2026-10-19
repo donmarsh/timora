@@ -6,6 +6,8 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -282,5 +284,44 @@ class EditorScreenTest {
         rule.onNodeWithTag("editor_back").performClick()
         rule.onNodeWithTag("discard_confirm").performClick()
         assertEquals(1, backCalls)
+    }
+
+    private fun editableText(tag: String): String =
+        rule.onNodeWithTag(tag).fetchSemanticsNode().config[SemanticsProperties.EditableText].text
+
+    @Test fun typingInDurationFieldIsNotResetMidEditAndNormalisesOnFocusLoss() {
+        val vm = newVm()
+        show(vm)
+        rule.onNodeWithTag("seg_dur_0_0_sec").performClick()
+        rule.onNodeWithTag("seg_dur_0_0_sec").performTextReplacement("90")
+        rule.waitForIdle()
+        assertEquals(90, vm.timer.blocks[0].segments[0].durationSeconds)
+        // still focused: the text must stay exactly what the user typed
+        assertEquals("90", editableText("seg_dur_0_0_sec"))
+        assertEquals("0", editableText("seg_dur_0_0_min"))
+        // moving focus away normalises 90s -> 1:30
+        rule.onNodeWithTag("seg_dur_0_0_min").performClick()
+        rule.waitForIdle()
+        assertEquals("30", editableText("seg_dur_0_0_sec"))
+        assertEquals("1", editableText("seg_dur_0_0_min"))
+    }
+
+    @Test fun plusMinusButtonsResyncTheFields() {
+        val vm = newVm()
+        show(vm)
+        rule.onNodeWithTag("seg_dur_0_0_sec").performClick()
+        rule.onNodeWithTag("seg_dur_0_0_sec").performTextReplacement("55")
+        rule.onNodeWithTag("seg_dur_0_0_inc").performClick()
+        rule.waitForIdle()
+        assertEquals(60, vm.timer.blocks[0].segments[0].durationSeconds)
+        assertEquals("0", editableText("seg_dur_0_0_sec"))
+        assertEquals("1", editableText("seg_dur_0_0_min"))
+    }
+
+    @Test fun checkTintIsBlackOnLightSwatchesAndWhiteOnDarkOnes() {
+        assertEquals(Color.Black, checkTint(Color(0xFFFFC107))) // amber
+        assertEquals(Color.Black, checkTint(Color.White))
+        assertEquals(Color.White, checkTint(Color(0xFF1A237E))) // deep indigo
+        assertEquals(Color.White, checkTint(Color.Black))
     }
 }

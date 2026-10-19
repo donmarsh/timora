@@ -12,6 +12,8 @@ data class PlannedStep(
     val stepIndex: Int,
     val startOffsetMs: Long,
     val totalBlocks: Int,
+    /** Name of the owning block, or null if unnamed (always null for the prep step). */
+    val blockName: String?,
 ) {
     val durationMs: Long get() = segment.durationSeconds * 1000L
     val endOffsetMs: Long get() = startOffsetMs + durationMs
@@ -46,7 +48,8 @@ class TimerPlan(val steps: List<PlannedStep>) {
             }
             var offset = 0L
             val steps = raw.mapIndexed { i, (seg, pos, total) ->
-                PlannedStep(seg, pos.first, pos.second, total, i, offset, timer.blocks.size).also {
+                val blockName = timer.blocks.getOrNull(pos.first)?.name?.takeIf { it.isNotBlank() }
+                PlannedStep(seg, pos.first, pos.second, total, i, offset, timer.blocks.size, blockName).also {
                     offset += it.durationMs
                 }
             }

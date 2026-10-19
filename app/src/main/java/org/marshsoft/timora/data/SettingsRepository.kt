@@ -16,7 +16,7 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
-    val dynamicColor: Boolean = true,
+    val dynamicColor: Boolean = false,
     val soundEnabled: Boolean = true,
     val vibrationEnabled: Boolean = true,
 )
@@ -35,7 +35,7 @@ class DataStoreSettingsRepository(private val dataStore: DataStore<Preferences>)
         .map { p ->
             AppSettings(
                 themeMode = p[THEME]?.let { s -> ThemeMode.entries.firstOrNull { it.name == s } } ?: ThemeMode.SYSTEM,
-                dynamicColor = p[DYNAMIC] ?: true,
+                dynamicColor = p[DYNAMIC] ?: false,
                 soundEnabled = p[SOUND] ?: true,
                 vibrationEnabled = p[VIBRATION] ?: true,
             )
@@ -54,18 +54,27 @@ class DataStoreSettingsRepository(private val dataStore: DataStore<Preferences>)
     }
 }
 
-/** Seeds the sample timers exactly once (tracked in DataStore so deleting them is permanent). */
+/**
+ * Seeds the sample timers exactly once (tracked in DataStore so deleting them is permanent).
+ * All samples are inserted in a single Room transaction, then the flag is set. If the process dies between
+ * the two, the next launch sees existing timers and only sets the flag, so samples are never seeded twice.
+ */
 class SampleSeeder(
-    private val repository: TimerRepository,
+    private val dao: TimerDao,
     private val dataStore: DataStore<Preferences>,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     /** Returns true if seeding happened. */
     suspend fun seedIfNeeded(): Boolean {
         if (dataStore.data.first()[SEEDED] == true) return false
-        SampleTimers.all(clock()).forEach { repository.save(it) }
+        val seeded = if (dao.count() == 0) {
+            dao.insertAll(SampleTimers.all(clock()))
+            true
+        } else {
+            false
+        }
         dataStore.edit { it[SEEDED] = true }
-        return true
+        return seeded
     }
 
     private companion object {

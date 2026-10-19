@@ -61,4 +61,10 @@ abstract class TimerDao {
         }
         return timerId
     }
+
+    /** Inserts all timers in one transaction (all or nothing). */
+    @Transaction
+    open suspend fun insertAll(timers: List<Timer>) {
+        timers.forEach { upsert(it.copy(id = 0)) }
+    }
 }

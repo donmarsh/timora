@@ -21,6 +21,7 @@ class AppContainerTest {
         var list = c.timerRepository.observeAll().first()
         repeat(100) { if (list.size < 2) { delay(50); list = c.timerRepository.observeAll().first() } }
         assertEquals(2, list.size)
+        assertTrue(c.seeded.value)
         assertEquals(true, c.settingsRepository.settings.first().soundEnabled)
         assertTrue(c.database.isOpen)
         c.database.close()

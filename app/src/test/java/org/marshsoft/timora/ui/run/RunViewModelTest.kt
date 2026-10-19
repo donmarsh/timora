@@ -31,12 +31,16 @@ class RunViewModelTest {
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
     @After fun tearDown() { Dispatchers.resetMain() }
 
-    private fun vm(timer: Timer? = workRestTimer(), repo: FakeTimerRepository? = null) = RunViewModel(
+    private fun vm(
+        timer: Timer? = workRestTimer(),
+        repo: FakeTimerRepository? = null,
+        clock: () -> Long = { dispatcher.scheduler.currentTime },
+    ) = RunViewModel(
         timerId = 1L,
         repository = repo ?: FakeTimerRepository(listOfNotNull(timer)),
         settingsRepository = settings,
         cuePlayer = cues,
-        timeSource = { dispatcher.scheduler.currentTime },
+        timeSource = { clock() },
         dispatcher = dispatcher,
     )
 
@@ -223,5 +227,86 @@ class RunViewModelTest {
         runCurrent()
         store.clear()
         assertTrue(cues.released)
+    }
+
+    @Test fun pauseIsNoOpUnlessRunning() = runTest(dispatcher) {
+        val vm = vm()
+        vm.pause() // before load
+        runCurrent()
+        advance(1_000)
+        vm.pause()
+        runCurrent()
+        assertEquals(RunStatus.PAUSED, vm.ready().run.status)
+        assertEquals(4_000L, vm.ready().run.stepRemainingMs)
+        vm.pause() // already paused
+        advance(5_000)
+        assertEquals(RunStatus.PAUSED, vm.ready().run.status)
+        assertEquals(4_000L, vm.ready().run.stepRemainingMs)
+    }
+
+    @Test fun pauseWhenFinishedIsNoOp() = runTest(dispatcher) {
+        val vm = vm()
+        runCurrent()
+        advance(14_000)
+        vm.pause()
+        assertEquals(RunStatus.FINISHED, vm.ready().run.status)
+    }
+
+    @Test fun hugeTickDeltaIsCapped() = runTest(dispatcher) {
+        var now = 0L
+        val vm = vm(clock = { now + dispatcher.scheduler.currentTime })
+        runCurrent()
+        now += 5_000 // simulated frozen process: clock jumps without ticks
+        advance(100)
+        assertEquals(RunStatus.RUNNING, vm.ready().run.status)
+        assertEquals(4_900L, vm.ready().run.stepRemainingMs)
+        assertEquals("Work", vm.ready().run.currentStep?.segment?.name)
+    }
+
+    @Test fun skipPreviousWithPendingTickGoesBackOneStep() = runTest(dispatcher) {
+        var now = 0L
+        val vm = vm(clock = { now + dispatcher.scheduler.currentTime })
+        runCurrent()
+        vm.skipNext(); runCurrent() // now on Rest (2s), nothing elapsed
+        now += 900 // pending, not yet ticked
+        vm.skipPrevious(); runCurrent()
+        // Flush made the elapsed 900ms (<= 3s threshold) so it goes back one step to Work.
+        assertEquals("Work", vm.ready().run.currentStep?.segment?.name)
+    }
+
+    @Test fun skipFlushThatFinishesRunDoesNotSkipAgain() = runTest(dispatcher) {
+        var now = 0L
+        val vm = vm(workRestTimer(cycles = 1).let { it.copy(blocks = listOf(it.blocks[0].copy(segments = listOf(runSeg("Solo", 1))))) }, clock = { now + dispatcher.scheduler.currentTime })
+        runCurrent()
+        now += 1_000
+        vm.skipNext(); runCurrent()
+        assertEquals(RunStatus.FINISHED, vm.ready().run.status)
+        assertEquals(1, cues.count("finish"))
+        assertEquals(1_000L, vm.ready().run.totalDurationMs)
+    }
+
+    @Test fun skipNextFlushesElapsedTimeIntoProgress() = runTest(dispatcher) {
+        var now = 0L
+        val vm = vm(clock = { now + dispatcher.scheduler.currentTime })
+        runCurrent()
+        now += 500
+        vm.skipNext(); runCurrent()
+        assertEquals("Rest", vm.ready().run.currentStep?.segment?.name)
+        assertEquals(2_000L, vm.ready().run.stepRemainingMs)
+    }
+
+    @Test fun blockLabelIncludesBlockName() = runTest(dispatcher) {
+        val base = workRestTimer(blocks = 2)
+        val named = base.copy(blocks = base.blocks.mapIndexed { i, b -> b.copy(name = if (i == 0) "Tabata" else null) })
+        val vm = vm(named)
+        runCurrent()
+        assertEquals("Block 1/2 · Tabata", vm.ready().blockLabel)
+    }
+
+    @Test fun singleNamedBlockShowsJustTheName() = runTest(dispatcher) {
+        val base = workRestTimer(blocks = 1)
+        val vm = vm(base.copy(blocks = base.blocks.map { it.copy(name = "Tabata") }))
+        runCurrent()
+        assertEquals("Tabata", vm.ready().blockLabel)
     }
 }

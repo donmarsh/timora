@@ -32,7 +32,13 @@ fun ThemeMode.isDark(systemDark: Boolean): Boolean = when (this) {
 enum class SegmentTypeKey { WORK, REST, PREP, COOLDOWN }
 
 @Immutable
-data class SegmentColors(val container: Color, val onContainer: Color, val accent: Color)
+data class SegmentColors(
+    val container: Color,
+    val onContainer: Color,
+    val accent: Color,
+    /** Content (icon) color for things drawn on top of [accent]; >= 3:1 against it. */
+    val onAccent: Color,
+)
 
 @Immutable
 data class SegmentPalette(
@@ -50,17 +56,17 @@ data class SegmentPalette(
 }
 
 internal val LightSegmentPalette = SegmentPalette(
-    work = SegmentColors(Color(0xFFFFDBCF), Color(0xFF3A0B00), Color(0xFFD9512A)),
-    rest = SegmentColors(Color(0xFFCDE8F7), Color(0xFF001E2E), Color(0xFF1F78A8)),
-    prep = SegmentColors(Color(0xFFFFE9A8), Color(0xFF241A00), Color(0xFFB88700)),
-    cooldown = SegmentColors(Color(0xFFE3DDFF), Color(0xFF1B1048), Color(0xFF6B58C9)),
+    work = SegmentColors(Color(0xFFFFDBCF), Color(0xFF3A0B00), Color(0xFFD9512A), Color(0xFFFFFFFF)),
+    rest = SegmentColors(Color(0xFFCDE8F7), Color(0xFF001E2E), Color(0xFF1F78A8), Color(0xFFFFFFFF)),
+    prep = SegmentColors(Color(0xFFFFE9A8), Color(0xFF241A00), Color(0xFFB88700), Color(0xFF241A00)),
+    cooldown = SegmentColors(Color(0xFFE3DDFF), Color(0xFF1B1048), Color(0xFF6B58C9), Color(0xFFFFFFFF)),
 )
 
 internal val DarkSegmentPalette = SegmentPalette(
-    work = SegmentColors(Color(0xFF7A2A0F), Color(0xFFFFDBCF), Color(0xFFFF8F6B)),
-    rest = SegmentColors(Color(0xFF0C4A6B), Color(0xFFCDE8F7), Color(0xFF7CC4EE)),
-    prep = SegmentColors(Color(0xFF5A4300), Color(0xFFFFE9A8), Color(0xFFF2C94C)),
-    cooldown = SegmentColors(Color(0xFF3F3190), Color(0xFFE3DDFF), Color(0xFFB4A7FF)),
+    work = SegmentColors(Color(0xFF7A2A0F), Color(0xFFFFDBCF), Color(0xFFFF8F6B), Color(0xFF3A0B00)),
+    rest = SegmentColors(Color(0xFF0C4A6B), Color(0xFFCDE8F7), Color(0xFF7CC4EE), Color(0xFF001E2E)),
+    prep = SegmentColors(Color(0xFF5A4300), Color(0xFFFFE9A8), Color(0xFFF2C94C), Color(0xFF241A00)),
+    cooldown = SegmentColors(Color(0xFF3F3190), Color(0xFFE3DDFF), Color(0xFFB4A7FF), Color(0xFF1B1048)),
 )
 
 /** Eight card accents, tuned to read on both light and dark surfaces. */

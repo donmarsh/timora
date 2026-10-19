@@ -3,10 +3,20 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.kover)
+    alias(libs.plugins.androidx.room)
+}
+
+room {
+    schemaDirectory("$projectDir/schemas")
 }
 
 kover {
     reports {
+        verify {
+            rule("Minimum line coverage") {
+                minBound(80)
+            }
+        }
         filters {
             excludes {
                 classes(
@@ -22,6 +32,10 @@ kover {
             }
         }
     }
+}
+
+tasks.named("check") {
+    dependsOn("koverVerifyDebug")
 }
 
 android {
@@ -72,6 +86,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
@@ -84,6 +99,7 @@ dependencies {
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.androidx.junit)
     testImplementation(libs.turbine)
+    testImplementation(libs.androidx.navigation.testing)
     testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(platform(libs.androidx.compose.bom))

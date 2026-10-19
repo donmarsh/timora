@@ -8,7 +8,7 @@ import androidx.room.RoomDatabase
 @Database(
     entities = [TimerEntity::class, BlockEntity::class, SegmentEntity::class],
     version = 1,
-    exportSchema = false,
+    exportSchema = true,
 )
 abstract class TimoraDatabase : RoomDatabase() {
     abstract fun timerDao(): TimerDao

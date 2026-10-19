@@ -51,3 +51,6 @@ Thumbs.db
 __pycache__/
 *.pyc
 .venv/
+
+# --- Branding sources & store assets (kept local, not published) ---
+branding/

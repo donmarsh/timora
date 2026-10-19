@@ -1,16 +1,53 @@
-*.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+# --- Gradle / build outputs ---
+.gradle/
+build/
+.kotlin/
+.externalNativeBuild/
+.cxx/
+/captures/
+
+# Built artifacts
+*.apk
+*.aab
+*.ap_
+*.dex
+output-metadata.json
+/app/release/
+/app/debug/
+
+# --- Local configuration (machine-specific, may contain SDK paths) ---
 local.properties
+
+# --- Signing secrets (never commit) ---
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+google-services.json
+play-service-account*.json
+
+# --- IDE: Android Studio / IntelliJ ---
+*.iml
+.idea/*
+# Shared code style is useful to keep
+!.idea/codeStyles/
+.navigation/
+
+# --- IDE: VS Code ---
+.vscode/
+
+# --- Claude Code: keep shared project skills, ignore personal settings ---
+.claude/settings.local.json
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Logs / misc ---
+*.log
+*.hprof
+
+# --- Python (branding/generate_assets.py) ---
 __pycache__/
+*.pyc
+.venv/

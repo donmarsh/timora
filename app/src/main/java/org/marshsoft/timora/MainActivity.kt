@@ -4,44 +4,24 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.marshsoft.timora.data.AppSettings
+import org.marshsoft.timora.ui.common.appContainer
+import org.marshsoft.timora.ui.common.toUi
+import org.marshsoft.timora.ui.navigation.TimoraNavHost
 import org.marshsoft.timora.ui.theme.TimoraTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val settingsFlow = appContainer.settingsRepository.settings
         setContent {
-            TimoraTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
+            val settings by settingsFlow.collectAsStateWithLifecycle(initialValue = AppSettings())
+            TimoraTheme(themeMode = settings.themeMode.toUi(), dynamicColor = settings.dynamicColor) {
+                TimoraNavHost()
             }
         }
-    }
-}
-
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    TimoraTheme {
-        Greeting("Android")
     }
 }

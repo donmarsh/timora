@@ -4,6 +4,8 @@ import android.view.View
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.test.assertIsDisplayed
@@ -27,7 +29,12 @@ import org.marshsoft.timora.domain.RunStatus
 import org.marshsoft.timora.domain.SegmentType
 import org.marshsoft.timora.domain.TimerEngine
 import org.marshsoft.timora.domain.TimerPlan
+import org.marshsoft.timora.ui.theme.SegmentTypeKey
+import org.marshsoft.timora.ui.theme.ThemeMode
 import org.marshsoft.timora.ui.theme.TimoraTheme
+import org.marshsoft.timora.ui.theme.segmentColorsFor
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 
 @RunWith(AndroidJUnit4::class)
 class RunScreenTest {
@@ -246,5 +253,35 @@ class RunScreenTest {
     @Test fun segmentTypeLabels() {
         assertEquals("Get ready", SegmentType.PREP.label())
         assertEquals("Cool-down", SegmentType.COOLDOWN.label())
+    }
+
+    @Test fun darkThemeContentColorIsDarkOnContainer() {
+        rule.setContent {
+            TimoraTheme(themeMode = ThemeMode.DARK) {
+                RunScreen(
+                    state = ready(runState(RunStatus.RUNNING, tickMs = 1_000), block = "Block 1/2"),
+                    onTogglePlayPause = {}, onSkipNext = {}, onSkipPrevious = {}, onRestart = {}, onClose = {},
+                )
+            }
+        }
+        rule.waitForIdle()
+        val expected = segmentColorsFor(SegmentTypeKey.WORK, dark = true).onContainer
+        rule.onNodeWithTag("run_time").assert(
+            SemanticsMatcher("content color is dark-theme onContainer") {
+                it.config.getOrNull(RunContentColorKey) == expected
+            },
+        )
+    }
+
+    @Test fun runContentColorsDeriveFromOnContainer() {
+        for (type in SegmentTypeKey.values()) {
+            for (dark in listOf(true, false)) {
+                val c = runContentColors(type, dark)
+                assertEquals(segmentColorsFor(type, dark).onContainer, c.content)
+            }
+        }
+        // Dark-theme content must be light (luminance well above mid), light-theme content dark.
+        assertTrue(runContentColors(SegmentTypeKey.WORK, true).content.luminance() > 0.5f)
+        assertTrue(runContentColors(SegmentTypeKey.WORK, false).content.luminance() < 0.1f)
     }
 }

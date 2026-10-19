@@ -34,6 +34,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -41,6 +42,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -59,6 +63,8 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.SemanticsPropertyReceiver
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
@@ -80,6 +86,8 @@ import org.marshsoft.timora.domain.formatRemainingMs
 import org.marshsoft.timora.ui.common.appContainer
 import org.marshsoft.timora.ui.common.toKey
 import org.marshsoft.timora.ui.theme.SegmentColors
+import org.marshsoft.timora.ui.theme.SegmentTypeKey
+import org.marshsoft.timora.ui.theme.segmentColorsFor
 import org.marshsoft.timora.ui.theme.Spacing
 import org.marshsoft.timora.ui.theme.TimoraTheme
 import org.marshsoft.timora.ui.theme.timerDisplay
@@ -112,6 +120,32 @@ fun SegmentType.label(): String = when (this) {
     SegmentType.COOLDOWN -> "Cool-down"
 }
 
+/** Foreground colors for the run screen, all derived from the segment container the screen is tinted with. */
+@Immutable
+data class RunContentColors(
+    val content: Color,
+    val secondary: Color,
+    val track: Color,
+    val chip: Color,
+)
+
+fun runContentColors(content: Color) = RunContentColors(
+    content = content,
+    secondary = content.copy(alpha = 0.7f),
+    track = content.copy(alpha = 0.15f),
+    chip = content.copy(alpha = 0.08f),
+)
+
+fun runContentColors(colors: SegmentColors) = runContentColors(colors.onContainer)
+
+fun runContentColors(type: SegmentTypeKey, dark: Boolean) = runContentColors(segmentColorsFor(type, dark))
+
+private val LocalRunColors = compositionLocalOf { runContentColors(Color.Black) }
+
+/** Exposes the resolved content color of a node to tests. */
+val RunContentColorKey = SemanticsPropertyKey<Color>("RunContentColor")
+var SemanticsPropertyReceiver.runContentColor by RunContentColorKey
+
 @Composable
 fun RunScreen(
     state: RunUiState,
@@ -135,6 +169,11 @@ fun RunScreen(
         lerp(surface, segmentColors.container, 0.45f)
     } else surface
     val background by animateColorAsState(target, tween(500), label = "runBackground")
+    val contentTarget = if (ready != null && ready.run.status != RunStatus.FINISHED) {
+        segmentColors.onContainer
+    } else MaterialTheme.colorScheme.onSurface
+    val contentColor by animateColorAsState(contentTarget, tween(500), label = "runContent")
+    val runColors = runContentColors(contentColor)
 
     var confirmStop by rememberSaveable { mutableStateOf(false) }
     val needsConfirm = ready != null &&
@@ -148,6 +187,7 @@ fun RunScreen(
     }
     BackHandler(enabled = needsConfirm) { confirmStop = true }
 
+    CompositionLocalProvider(LocalContentColor provides contentColor, LocalRunColors provides runColors) {
     Box(
         Modifier
             .fillMaxSize()
@@ -172,6 +212,7 @@ fun RunScreen(
                 )
             }
         }
+    }
     }
 
     if (confirmStop) {
@@ -202,12 +243,12 @@ private fun NotFoundContent(onClose: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("Timer not found", style = MaterialTheme.typography.headlineSmall)
+        Text("Timer not found", style = MaterialTheme.typography.headlineSmall, color = LocalRunColors.current.content)
         Spacer(Modifier.size(Spacing.sm))
         Text(
             "This timer may have been deleted.",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = LocalRunColors.current.secondary,
         )
         Spacer(Modifier.size(Spacing.lg))
         Button(onClick = onClose, modifier = Modifier.testTag("run_not_found_back")) { Text("Go back") }
@@ -233,23 +274,29 @@ private fun FinishedContent(state: RunUiState.Ready, onRestart: () -> Unit, onCl
             "Well done!",
             style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.Bold,
+            color = LocalRunColors.current.content,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         )
         Spacer(Modifier.size(Spacing.xs))
         Text(
             state.timerName,
             style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = LocalRunColors.current.secondary,
             textAlign = TextAlign.Center,
             modifier = Modifier.testTag("run_finished_name"),
         )
         Spacer(Modifier.size(Spacing.lg))
-        Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        Surface(
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ) {
             Column(Modifier.padding(horizontal = Spacing.xl, vertical = Spacing.md), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Total time", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     formatDuration((state.run.totalDurationMs / 1000).toInt()),
                     style = MaterialTheme.typography.displayMedium.copy(fontFeatureSettings = "tnum"),
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.testTag("run_finished_total"),
                 )
             }
@@ -347,11 +394,12 @@ private fun ActiveContent(
 private fun RunHeader(timerName: String, onClose: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onClose, modifier = Modifier.size(48.dp).testTag("run_close")) {
-            Icon(Icons.Filled.Close, contentDescription = "Close")
+            Icon(Icons.Filled.Close, contentDescription = "Close", tint = LocalRunColors.current.content)
         }
         Text(
             timerName,
             style = MaterialTheme.typography.titleMedium,
+            color = LocalRunColors.current.content,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
@@ -376,6 +424,7 @@ private fun SegmentName(name: String) {
         name,
         style = MaterialTheme.typography.headlineMedium,
         fontWeight = FontWeight.SemiBold,
+        color = LocalRunColors.current.content,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier
@@ -389,7 +438,7 @@ private fun ProgressRing(state: RunUiState.Ready, accent: Color, ring: Dp) {
     val run = state.run
     val step = run.currentStep
     val progress by animateFloatAsState(run.stepProgress, tween(120, easing = LinearEasing), label = "ring")
-    val track = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
+    val track = LocalRunColors.current.track
     val strokeDp = (ring.value * 0.0625f).coerceIn(8f, 20f).dp
     Box(
         Modifier
@@ -415,12 +464,13 @@ private fun ProgressRing(state: RunUiState.Ready, accent: Color, ring: Dp) {
                 Text(
                     typeLabel.uppercase(),
                     style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = LocalRunColors.current.secondary,
                     maxLines = 1,
                     modifier = Modifier.testTag("run_type_label"),
                 )
             }
             val time = formatRemainingMs(run.stepRemainingMs)
+            val timeColor = LocalRunColors.current.content
             // Font scales with the ring; longer "1:01:40" strings get a smaller factor so they never clip.
             val factor = if (time.length > 5) 0.19f else 0.27f
             val fontSize = (ring.value * factor).coerceAtLeast(32f)
@@ -430,11 +480,15 @@ private fun ProgressRing(state: RunUiState.Ready, accent: Color, ring: Dp) {
                     fontSize = fontSize.sp,
                     lineHeight = (fontSize * 1.1f).sp,
                 ),
+                color = timeColor,
                 maxLines = 1,
                 softWrap = false,
                 modifier = Modifier
                     .testTag("run_time")
-                    .semantics { contentDescription = "$time remaining" },
+                    .semantics {
+                        contentDescription = "$time remaining"
+                        runContentColor = timeColor
+                    },
             )
         }
     }
@@ -447,13 +501,14 @@ private fun OverallProgress(state: RunUiState.Ready, accent: Color) {
         progress = { run.progress },
         modifier = Modifier.fillMaxWidth().heightIn(min = 6.dp).clip(CircleShape).testTag("run_overall_progress"),
         color = accent,
-        trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
+        trackColor = LocalRunColors.current.track,
     )
     Row(Modifier.fillMaxWidth().padding(top = Spacing.xs), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text("Total remaining", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Total remaining", style = MaterialTheme.typography.labelMedium, color = LocalRunColors.current.secondary)
         Text(
             formatRemainingMs(run.totalRemainingMs),
             style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+            color = LocalRunColors.current.content,
             modifier = Modifier.testTag("run_total_remaining"),
         )
     }
@@ -465,13 +520,14 @@ private fun NextUp(next: String?) {
     Spacer(Modifier.size(Spacing.sm))
     Surface(
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+        color = LocalRunColors.current.chip,
+        contentColor = LocalRunColors.current.content,
         modifier = Modifier.fillMaxWidth().testTag("run_next_up"),
     ) {
         Row(Modifier.padding(Spacing.md), verticalAlignment = Alignment.CenterVertically) {
-            Text("Next", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Next", style = MaterialTheme.typography.labelLarge, color = LocalRunColors.current.secondary)
             Spacer(Modifier.size(Spacing.md))
-            Text(next, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(next, style = MaterialTheme.typography.titleMedium, color = LocalRunColors.current.content, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
     Spacer(Modifier.size(Spacing.sm))
@@ -495,7 +551,7 @@ private fun Controls(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onSkipPrevious, modifier = Modifier.size(m.skip).testTag("run_skip_previous")) {
-            Icon(Icons.Filled.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(skipIcon))
+            Icon(Icons.Filled.SkipPrevious, contentDescription = "Previous", tint = LocalRunColors.current.content, modifier = Modifier.size(skipIcon))
         }
         Surface(
             onClick = onTogglePlayPause,
@@ -508,12 +564,13 @@ private fun Controls(
                 Icon(
                     if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
                     contentDescription = if (paused) "Resume" else "Pause",
+                    tint = onAccent,
                     modifier = Modifier.size(playIcon),
                 )
             }
         }
         IconButton(onClick = onSkipNext, modifier = Modifier.size(m.skip).testTag("run_skip_next")) {
-            Icon(Icons.Filled.SkipNext, contentDescription = "Next", modifier = Modifier.size(skipIcon))
+            Icon(Icons.Filled.SkipNext, contentDescription = "Next", tint = LocalRunColors.current.content, modifier = Modifier.size(skipIcon))
         }
     }
 }
@@ -522,11 +579,13 @@ private fun Controls(
 private fun LabelPill(text: String, tag: String, live: Boolean = false) {
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+        color = LocalRunColors.current.chip,
+        contentColor = LocalRunColors.current.content,
     ) {
         Text(
             text,
             style = MaterialTheme.typography.labelLarge,
+            color = LocalRunColors.current.content,
             modifier = Modifier
                 .padding(horizontal = Spacing.md, vertical = Spacing.xs)
                 .testTag(tag)

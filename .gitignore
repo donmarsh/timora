@@ -36,8 +36,9 @@ play-service-account*.json
 # --- IDE: VS Code ---
 .vscode/
 
-# --- Claude Code: keep shared project skills, ignore personal settings ---
-.claude/settings.local.json
+# --- AI agent tooling (local only) ---
+.claude/
+.agents/
 
 # --- OS ---
 .DS_Store
